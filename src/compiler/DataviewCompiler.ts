@@ -55,22 +55,31 @@ export class DataviewCompiler {
 				const block = queryBlock[0];
 				const query = queryBlock[1];
 
-				const { isInsideCallout, finalQuery } =
-					this.sanitizeQuery(query);
+				const { nested_depth, finalQuery } = this.sanitizeQuery(query);
 
 				let markdown = await dvApi.tryQueryMarkdown(
 					finalQuery,
 					file.getPath(),
 				);
 
-				if (isInsideCallout) {
-					markdown = this.surroundWithCalloutBlock(markdown);
-				}
+				if (nested_depth) {
+					markdown = this.surroundWithCalloutBlock(
+						markdown,
+						nested_depth,
+					);
 
-				replacedText = replacedText.replace(
-					block,
-					`${markdown}\n{ .block-language-dataview}`,
-				);
+					replacedText = replacedText.replace(
+						block,
+						`${markdown}\n` +
+							">".repeat(nested_depth) +
+							`{ .block-language-dataview}`,
+					);
+				} else {
+					replacedText = replacedText.replace(
+						block,
+						`${markdown}\n{ .block-language-dataview}`,
+					);
+				}
 			} catch (e) {
 				console.log(e);
 
@@ -168,6 +177,7 @@ export class DataviewCompiler {
 				return inlineJsQuery[0];
 			}
 		}
+		console.log(replacedText);
 
 		return replacedText;
 	};
@@ -178,10 +188,10 @@ export class DataviewCompiler {
 	 * returns all the lines as a single string
 	 *
 	 */
-	surroundWithCalloutBlock(input: string): string {
+	surroundWithCalloutBlock(input: string, nested_depth: number): string {
 		const tmp = input.split("\n");
 
-		return " " + tmp.join("\n> ");
+		return " " + tmp.join("\n" + ">".repeat(nested_depth) + " ");
 	}
 
 	/**
@@ -192,28 +202,38 @@ export class DataviewCompiler {
 	 * @returns
 	 */
 	sanitizeQuery(query: string): {
-		isInsideCallout: boolean;
+		nested_depth: number;
 		finalQuery: string;
 	} {
-		let isInsideCallout = false;
+		let nested_depth = 0;
 		const parts = query.split("\n");
 		const sanitized = [];
 
+		// Find the nested depth
+		let index = 0;
+
+		for (
+			let iter_letter = parts[0][index];
+			iter_letter == " " || iter_letter == ">";
+			index++, iter_letter = parts[0][index]
+		) {
+			if (iter_letter == ">") nested_depth++;
+		}
+
 		for (const part of parts) {
-			if (part.startsWith(">")) {
-				isInsideCallout = true;
-				sanitized.push(part.substring(1).trim());
+			if (nested_depth) {
+				sanitized.push(part.substring(index).trim());
 			} else {
 				sanitized.push(part);
 			}
 		}
 		let finalQuery = query;
 
-		if (isInsideCallout) {
+		if (nested_depth) {
 			finalQuery = sanitized.join("\n");
 		}
 
-		return { isInsideCallout, finalQuery };
+		return { nested_depth, finalQuery };
 	}
 }
 
